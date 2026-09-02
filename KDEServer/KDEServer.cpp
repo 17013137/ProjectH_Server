@@ -21,7 +21,8 @@ int main()
     if (listensocket == INVALID_SOCKET)
         return 0;
 
-    u_long blocking_on = 1;
+    // 0 = blocking , 1 = non-blocking
+    u_long blocking_on = 0;
     if (ioctlsocket(listensocket, FIONBIO, &blocking_on) == INVALID_SOCKET) {
         cout << "You Can't Controll your Socket!!!" << endl;
         return 0;
@@ -68,22 +69,19 @@ int main()
 
         FD_SET(listensocket, &reads);
 
-        for (auto session : sessions) {
-            if(session.sendBytes >= session.recvBytes)
-                FD_SET(session.socket, &reads);
-            else
-                FD_SET(session.socket, &writes);
-
-            if (FD_ISSET(session.socket, &reads))
-            {
-                int recvLen = ::recv(session.socket, session.recvBuffer, BUFSIZE, 0);
-                if (recvLen <= 0)
-                    continue;
-            }
-
-            if (FD_ISSET(session.socket, &writes)) {
-
-            }
+        SOCKADDR_IN clientaddr{};
+        int clientDataLength = 0;
+        SOCKET clientSocket = ::accept(listensocket, (SOCKADDR*)&clientaddr, &clientDataLength);
+        //if (clientSocket == SOCKET_ERROR)
+        //    cout << "Accept error client socket!!!" << endl;
+        //else if (clientSocket == INVALID_SOCKET)
+        //    cout << "Invalid client socket!!!" << endl;
+        if(clientSocket != INVALID_SOCKET){
+            char ipStr[INET_ADDRSTRLEN]{};
+            ::inet_ntop(AF_INET, &clientaddr.sin_addr, ipStr, INET_ADDRSTRLEN);
+            cout << "Client IP : " << ipStr << endl;
         }
+
+
     }
 }
