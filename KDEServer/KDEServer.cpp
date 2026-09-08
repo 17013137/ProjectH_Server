@@ -22,7 +22,7 @@ int main()
         return 0;
 
     // 0 = blocking , 1 = non-blocking
-    u_long blocking_on = 0;
+    u_long blocking_on = 1;
     if (ioctlsocket(listensocket, FIONBIO, &blocking_on) == INVALID_SOCKET) {
         cout << "You Can't Controll your Socket!!!" << endl;
         return 0;
@@ -69,19 +69,49 @@ int main()
 
         FD_SET(listensocket, &reads);
 
-        SOCKADDR_IN clientaddr{};
-        int clientDataLength = 0;
-        SOCKET clientSocket = ::accept(listensocket, (SOCKADDR*)&clientaddr, &clientDataLength);
-        //if (clientSocket == SOCKET_ERROR)
-        //    cout << "Accept error client socket!!!" << endl;
-        //else if (clientSocket == INVALID_SOCKET)
-        //    cout << "Invalid client socket!!!" << endl;
-        if(clientSocket != INVALID_SOCKET){
-            char ipStr[INET_ADDRSTRLEN]{};
-            ::inet_ntop(AF_INET, &clientaddr.sin_addr, ipStr, INET_ADDRSTRLEN);
-            cout << "Client IP : " << ipStr << endl;
+        for (auto& session : sessions) {
+            if (session.sendBytes >= session.recvBytes)
+                FD_SET(session.socket, &reads);
+            else
+                FD_SET(session.socket, &writes);
         }
 
+        //recv, accept, send 가능한 소켓이 존재하는지 확인
+        if (::select(0, &reads, &writes, nullptr, nullptr) == SOCKET_ERROR)
+            continue;
 
+        if (FD_ISSET(listensocket, &reads)) {
+            SOCKADDR_IN clientaddr{};
+            int clientAddrLen = sizeof(clientaddr);
+            SOCKET clientSocket = ::accept(listensocket, (SOCKADDR*)&clientaddr, &clientAddrLen);
+
+            if (clientSocket != INVALID_SOCKET) {
+                u_long nonBlocking = 1;
+                ::ioctlsocket(clientSocket, FIONBIO, &nonBlocking);
+
+                char ipStr[INET_ADDRSTRLEN]{};
+                ::inet_ntop(AF_INET, &clientaddr.sin_addr, ipStr, INET_ADDRSTRLEN);
+                cout << "------ Connect!! Client IP : " << ipStr << " ------" << endl;
+
+                Session session;
+                session.socket = clientSocket;
+                sessions.push_back(session);
+            }
+        }
+
+        for (auto& session : sessions) {
+            if (FD_ISSET(session.socket, &reads)) {
+                session.recvBytes = ::recv(session.socket, session.recvBuffer, BUFSIZE, 0);
+                if (session.recvBytes <= 0)
+                    continue;
+                cout << session.recvBuffer << endl;
+            }
+
+            if (FD_ISSET(session.socket, &writes)) {
+                session.sendBytes = send(session.socket, session.recvBuffer, session.recvBytes, 0);
+                if (session.sendBytes <= 0)
+                    continue;
+            }
+        }
     }
 }
