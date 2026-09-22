@@ -3,10 +3,37 @@
 
 #include <iostream>
 #include <string>
+#include <cstdint>
 #include "KDECoreGlobal.h"
 #include "KDEPch.h"
 
-constexpr int BUFSIZE = 1000;
+constexpr int HEADER = 4; // [4바이트 길이(빅엔디안)][payload]
+
+// 요청한 바이트를 전부 보낼 때까지 반복 (부분 전송 대비)
+static bool sendAll(SOCKET s, const char* p, int len)
+{
+    int sent = 0;
+    while (sent < len) {
+        int n = ::send(s, p + sent, len - sent, 0);
+        if (n <= 0)
+            return false;
+        sent += n;
+    }
+    return true;
+}
+
+// 요청한 바이트를 전부 받을 때까지 반복 (부분 수신 대비)
+static bool recvAll(SOCKET s, char* p, int len)
+{
+    int got = 0;
+    while (got < len) {
+        int n = ::recv(s, p + got, len - got, 0);
+        if (n <= 0)
+            return false;
+        got += n;
+    }
+    return true;
+}
 
 int main()
 {
@@ -43,8 +70,6 @@ int main()
 
     cout << "Connected to Server !" << endl;
 
-    char recvBuffer[BUFSIZE]{};
-
     while (true) {
         cout << "Input: ";
         string input;
@@ -57,20 +82,29 @@ int main()
         if (input.empty())
             continue;
 
-        int sendLen = ::send(clientSocket, input.c_str(), static_cast<int>(input.size()), 0);
-        if (sendLen == SOCKET_ERROR) {
+        // 보내기: [길이][payload]
+        uint32_t netLen = htonl(static_cast<uint32_t>(input.size()));
+        if (!sendAll(clientSocket, reinterpret_cast<char*>(&netLen), HEADER)
+            || !sendAll(clientSocket, input.c_str(), static_cast<int>(input.size()))) {
             cout << "Send ERROR !!" << endl;
             break;
         }
 
-        int recvLen = ::recv(clientSocket, recvBuffer, BUFSIZE - 1, 0);
-        if (recvLen <= 0) {
+        // 받기: 먼저 4바이트 길이 → 그 길이만큼 payload
+        uint32_t len;
+        if (!recvAll(clientSocket, reinterpret_cast<char*>(&len), HEADER)) {
+            cout << "Recv ERROR or Server disconnected !!" << endl;
+            break;
+        }
+        len = ntohl(len);
+
+        string msg(len, '\0');
+        if (len > 0 && !recvAll(clientSocket, &msg[0], static_cast<int>(len))) {
             cout << "Recv ERROR or Server disconnected !!" << endl;
             break;
         }
 
-        recvBuffer[recvLen] = '\0';
-        cout << "Recv: " << recvBuffer << endl;
+        cout << "Recv: " << msg << endl;
     }
 
     ::closesocket(clientSocket);
